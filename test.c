@@ -11,13 +11,13 @@
 MUH_NIT_CASE(multiplication_works)
 {
     MUH_ASSERT("error: 1*1 != 1", 1 * 1 == 1);
-    MUH_END_CASE();
+    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(addition_works)
 {
     MUH_ASSERT("error: 1+1 != 2", 1 + 1 == 2);
-    MUH_END_CASE();
+    return MUH_SUCCESS;
 }
 
 int main(int argc, const char **args)

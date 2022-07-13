@@ -158,5 +158,4 @@ void muh_print_result(muh_error *res)
             return muh_new_error(__LINE__, __FILE__, error_msg); \
     } while (0)
 
-#define MUH_END_CASE() \
-    return NULL
+#define MUH_SUCCESS NULL
