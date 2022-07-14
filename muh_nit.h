@@ -77,7 +77,7 @@ int muh_nit_evaluate(muh_test_result result)
 
     printf("\nran %d tests with %d failures\n", result.tests_run, result.failed_tests);
 
-    return 0;
+    return (result.failed_tests > 0);
 }
 
 muh_test_result muh_nit_run(muh_nit_case muh_cases[])
@@ -159,3 +159,5 @@ void muh_print_result(muh_error *res)
     } while (0)
 
 #define MUH_SUCCESS NULL
+
+#define MUH_ERROR(message) muh_new_error(__LINE__, __FILE__, message)
