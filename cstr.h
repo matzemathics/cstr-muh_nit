@@ -6,8 +6,9 @@
 
 /* author: Matthias Meißner (geige.matze@gmail.com) */
 
-#include "string.h"
-#include "stdlib.h"
+#include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
 
 typedef struct allocator
 {
@@ -101,4 +102,57 @@ void cstring_append_impl(cstring *fst, cstr snd)
 
     memcpy(&fst->inner[fst->length], snd.inner, snd.length);
     fst->length += snd.length;
+}
+
+bool cstr_match(cstr a, cstr b)
+{
+    if (a.length != b.length)
+        return false;
+
+    const char *end = a.inner + a.length;
+
+    while (a.inner < end)
+        if (*a.inner++ != *b.inner++)
+            return false;
+
+    return true;
+}
+
+cstr cstr_find_first(cstr haystack, cstr needle)
+{
+    int left = 0, right = 0;
+    int shift_table[needle.length];
+    shift_table[0] = -1;
+
+    while (++right < needle.length)
+    {
+        if (needle.inner[left] == needle.inner[right])
+            shift_table[right] = shift_table[left];
+        else
+            shift_table[right] = left;
+
+        while (left >= 0 && needle.inner[right] != needle.inner[left])
+            left = shift_table[left];
+
+        left++;
+    }
+
+    int needle_pos = 0;
+    const char *haystack_end = haystack.inner + haystack.length;
+
+    while (haystack.inner < haystack_end)
+    {
+        while (needle_pos >= 0 && needle.inner[needle_pos] != *haystack.inner)
+            needle_pos = shift_table[needle_pos];
+
+        needle_pos++;
+        haystack.inner++;
+
+        if (needle_pos == len(needle))
+            return (cstr){
+                .length = len(needle),
+                .inner = haystack.inner - len(needle)};
+    }
+
+    return (cstr){.length = 0, .inner = NULL};
 }

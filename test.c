@@ -58,7 +58,24 @@ MUH_NIT_CASE(test_cstring_append)
     return MUH_SUCCESS;
 }
 
+MUH_NIT_CASE(test_cstr_match)
+{
+    cstr a = cstr("test"), b = cstr("test"), c = cstr("cccc"), d = cstr("d");
+    MUH_ASSERT("equal strings do not match", cstr_match(a, b));
+    MUH_ASSERT("unequal strings match", !cstr_match(a, c));
+    MUH_ASSERT("unequal strings match", !cstr_match(a, d));
+    return MUH_SUCCESS;
+}
+
 #define UNUSED(x) ((void)(x))
+
+MUH_NIT_CASE(test_find_first)
+{
+    cstr a = cstr("tesettingsre");
+    MUH_ASSERT("fake finding", len(cstr_find_first(a, cstr("test"))) == 0);
+    MUH_ASSERT("find failed", cstr_match(cstr_find_first(a, cstr("setting")), cstr("setting")));
+    return MUH_SUCCESS;
+}
 
 int main(int argc, const char **args)
 {
@@ -70,7 +87,9 @@ int main(int argc, const char **args)
         &test_cstring_from_char_ptr,
         &test_cstr_from_string,
         &test_cstring_from_cstr,
-        &test_cstring_append);
+        &test_cstring_append,
+        &test_cstr_match,
+        &test_find_first);
 
     muh_test_result res = muh_nit_run(cases);
     return muh_nit_evaluate(res);
