@@ -14,16 +14,16 @@
 MUH_NIT_CASE(test_cstr_from_char_ptr)
 {
     cstr s = cstr("test");
-    MUH_ASSERT("wrong length in cstr conversion", s.length == 4);
-    MUH_ASSERT("cstr conversion failed", strncmp(s.inner, "test", s.length) == 0);
+    MUH_ASSERT("wrong length in cstr conversion", len(s) == 4);
+    MUH_ASSERT("cstr conversion failed", strncmp(s.inner, "test", len(s)) == 0);
     return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_cstring_from_char_ptr)
 {
     cstring s = cstring_from("test", malloc_wrapper);
-    MUH_ASSERT("wrong length in cstring conversion", s.length == 4);
-    MUH_ASSERT("cstr conversion failed", strncmp(s.inner, "test", s.length) == 0);
+    MUH_ASSERT("wrong length in cstring conversion", len(s) == 4);
+    MUH_ASSERT("cstr conversion failed", strncmp(s.inner, "test", len(s)) == 0);
     cstring_free(s);
     return MUH_SUCCESS;
 }
@@ -32,8 +32,28 @@ MUH_NIT_CASE(test_cstr_from_string)
 {
     cstring s = cstring_from("test", malloc_wrapper);
     cstr res = cstr(s);
-    MUH_ASSERT("wrong length in cstr reference", res.length == s.length);
+    MUH_ASSERT("wrong length in cstr reference", len(res) == len(s));
     MUH_ASSERT("cstr reference broken", s.inner == res.inner);
+    cstring_free(s);
+    return MUH_SUCCESS;
+}
+
+MUH_NIT_CASE(test_cstring_from_cstr)
+{
+    cstring s = cstring_from(cstr("test"), malloc_wrapper);
+    MUH_ASSERT("wrong length in cstring conversion", len(s) == 4);
+    MUH_ASSERT("cstring conversion failed", strncmp(s.inner, "test", len(s)) == 0);
+    cstring_free(s);
+    return MUH_SUCCESS;
+}
+
+MUH_NIT_CASE(test_cstring_append)
+{
+    cstring s = cstring_from(cstr("hello"), malloc_wrapper);
+    cstring_append(&s, " world");
+    MUH_ASSERT("wrong length in cstring append", len(cstr("hello world")) == len(s));
+    MUH_ASSERT("cstring append failed", strncmp(s.inner, "hello world", len(s)) == 0);
+    MUH_ASSERT("capacity invariant broken", s.capacity >= len(s));
     cstring_free(s);
     return MUH_SUCCESS;
 }
@@ -48,7 +68,9 @@ int main(int argc, const char **args)
     muh_nit_case cases[] = MUH_CASES(
         &test_cstr_from_char_ptr,
         &test_cstring_from_char_ptr,
-        &test_cstr_from_string);
+        &test_cstr_from_string,
+        &test_cstring_from_cstr,
+        &test_cstring_append);
 
     muh_test_result res = muh_nit_run(cases);
     return muh_nit_evaluate(res);
