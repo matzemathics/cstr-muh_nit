@@ -35,7 +35,12 @@ cstr cstr_id(cstr input) { return input; }
 
 cstr cstr_from_char_ptr(const char *input);
 cstr cstr_from_cstring(cstring input);
+bool cstr_match(cstr a, cstr b);
+bool cstr_contains(cstr haystack, cstr needle);
+cstr cstr_find_first(cstr haystack, cstr needle);
 cstring c_string_from_cstr(cstr input, allocator alloc);
+void cstring_append_impl(cstring *, cstr);
+void cstring_free(cstring string);
 
 #ifndef __cplusplus
 
@@ -118,8 +123,19 @@ bool cstr_match(cstr a, cstr b)
     return true;
 }
 
+bool cstr_contains(cstr haystack, cstr needle)
+{
+    if (len(needle) == 0)
+        return true;
+
+    return len(cstr_find_first(haystack, needle)) != 0;
+}
+
 cstr cstr_find_first(cstr haystack, cstr needle)
 {
+    if (len(needle) == 0)
+        return (cstr){.length = 0, .inner = NULL};
+
     int left = 0, right = 0;
     int shift_table[needle.length];
     shift_table[0] = -1;

@@ -67,8 +67,6 @@ MUH_NIT_CASE(test_cstr_match)
     return MUH_SUCCESS;
 }
 
-#define UNUSED(x) ((void)(x))
-
 MUH_NIT_CASE(test_find_first)
 {
     cstr a = cstr("tesettingsre");
@@ -76,6 +74,17 @@ MUH_NIT_CASE(test_find_first)
     MUH_ASSERT("find failed", cstr_match(cstr_find_first(a, cstr("setting")), cstr("setting")));
     return MUH_SUCCESS;
 }
+
+MUH_NIT_CASE(test_contains)
+{
+    cstr a = cstr("tesettingsere");
+    MUH_ASSERT("contains found fake", !cstr_contains(a, cstr("test")));
+    MUH_ASSERT("contains found not", cstr_contains(a, cstr("setting")));
+    MUH_ASSERT("contains found not", cstr_contains(a, cstr("ser")));
+    return MUH_SUCCESS;
+}
+
+#define UNUSED(x) ((void)(x))
 
 int main(int argc, const char **args)
 {
@@ -89,7 +98,8 @@ int main(int argc, const char **args)
         &test_cstring_from_cstr,
         &test_cstring_append,
         &test_cstr_match,
-        &test_find_first);
+        &test_find_first,
+        &test_contains);
 
     muh_test_result res = muh_nit_run(cases);
     return muh_nit_evaluate(res);
