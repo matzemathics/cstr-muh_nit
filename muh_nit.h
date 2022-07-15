@@ -11,10 +11,10 @@
 
 typedef struct muh_error
 {
-    char *error_message;
+    const char *error_message;
     int line_number;
-    char *file_name;
-    char *test_case;
+    const char *file_name;
+    const char *test_case;
     struct muh_error *next;
 } muh_error;
 
@@ -32,9 +32,9 @@ typedef muh_error *(*muh_nit_case)(void);
         __VA_ARGS__, NULL \
     }
 
-muh_error *muh_new_error(int line, char *file, char *error_message)
+muh_error *muh_new_error(int line, const char *file, const char *error_message)
 {
-    muh_error *result = malloc(sizeof(muh_error));
+    muh_error *result = (muh_error *)malloc(sizeof(muh_error));
     result->test_case = NULL;
     result->next = NULL;
     result->line_number = line;

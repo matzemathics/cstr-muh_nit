@@ -16,26 +16,45 @@ typedef struct allocator
 
 typedef struct cstr
 {
-    int length;
+    size_t length;
     const char *inner;
 } cstr;
 
 typedef struct cstring
 {
-    int length;
+    size_t length;
     char *inner;
-    int capacity;
-    allocator allocator;
+    size_t capacity;
+    allocator alloc;
 } cstring;
 
 const allocator malloc_wrapper = {&realloc};
 
 cstr cstr_id(cstr input) { return input; }
 
+cstr cstr_from_char_ptr(const char *input);
+cstr cstr_from_cstring(cstring input);
+cstring c_string_from_cstr(cstr input, allocator alloc);
+
+#ifndef __cplusplus
+
 #define cstr(x) _Generic((x), char *                   \
                          : cstr_from_char_ptr, cstring \
                          : cstr_from_cstring, cstr     \
                          : cstr_id)(x)
+
+#else
+
+#define cstr(x) cstr_(x)
+
+cstr cstr_(const char *input)
+{
+    return cstr_from_char_ptr(input);
+}
+cstr cstr_(cstring input) { return cstr_from_cstring(input); }
+cstr cstr_(cstr input) { return input; }
+
+#endif
 
 #define cstring_from(x, alloc) \
     c_string_from_cstr(cstr(x), alloc)
@@ -52,21 +71,22 @@ cstr cstr_from_cstring(cstring input)
     return (cstr){.length = input.length, .inner = input.inner};
 }
 
-cstring c_string_from_cstr(cstr input, allocator allocator)
+cstring c_string_from_cstr(cstr input, allocator alloc)
 {
-    char *buffer = allocator.run(NULL, input.length);
+    char *buffer = (char *)alloc.run(NULL, input.length);
     memcpy(buffer, input.inner, input.length);
 
     return (cstring){
-        .allocator = allocator,
+        .length = input.length,
         .inner = buffer,
         .capacity = input.length,
-        .length = input.length};
+        .alloc = alloc,
+    };
 }
 
 void cstring_free(cstring string)
 {
-    string.allocator.run(string.inner, 0);
+    string.alloc.run(string.inner, 0);
 }
 
 #define cstring_append(x, y) cstring_append_impl(x, cstr(y))
@@ -75,7 +95,7 @@ void cstring_append_impl(cstring *fst, cstr snd)
 {
     if (fst->capacity < fst->length + snd.length)
     {
-        fst->inner = fst->allocator.run(fst->inner, fst->length + snd.length);
+        fst->inner = (char *)fst->alloc.run(fst->inner, fst->length + snd.length);
         fst->capacity = fst->length + snd.length;
     }
 
