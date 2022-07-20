@@ -35,6 +35,7 @@ cstr cstr_id(cstr input) { return input; }
 
 cstr cstr_from_char_ptr(const char *input);
 cstr cstr_from_cstring(cstring input);
+cstr cstr_end(cstr input);
 bool cstr_match(cstr a, cstr b);
 bool cstr_contains(cstr haystack, cstr needle);
 cstr cstr_find_first(cstr haystack, cstr needle);
@@ -44,9 +45,10 @@ void cstring_free(cstring string);
 
 #ifndef __cplusplus
 
-#define cstr(x) _Generic((x), char *                   \
-                         : cstr_from_char_ptr, cstring \
-                         : cstr_from_cstring, cstr     \
+#define cstr(x) _Generic((x), char *                        \
+                         : cstr_from_char_ptr, const char * \
+                         : cstr_from_char_ptr, cstring      \
+                         : cstr_from_cstring, cstr          \
                          : cstr_id)(x)
 
 #else
@@ -66,6 +68,72 @@ cstr cstr_(cstr input) { return input; }
     c_string_from_cstr(cstr(x), alloc)
 
 #define len(x) ((x).length)
+#define ptr(x) ((x).inner)
+#define end(x) ((x).inner + (x).length)
+#define inc(x)    \
+    do            \
+    {             \
+        ptr(x)++; \
+        len(x)--; \
+    } while (false)
+
+#ifndef __cplusplus
+
+#define TAKE_TIL_SEP(sep, begin, end) \
+    _Generic((sep), char *            \
+             : take_til_sep_char_ptr)(sep, begin, end)
+
+#else
+
+cstr take_til_sep_char_ptr(const char *, const char *, const char *);
+cstr take_til_sep_cstr(cstr, const char *, const char *);
+
+cstr take_til_sep(const char *sep, const char *begin, const char *end)
+{
+    return take_til_sep_char_ptr(sep, begin, end);
+}
+
+cstr take_tile_sep(cstr sep, const char *begin, const char *end)
+{
+    return take_til_sep_cstr(sep, begin, end);
+}
+
+#define TAKE_TIL_SEP(sep, begin, end) take_tile_sep(sep, begin, end)
+
+#endif
+
+#define CONCAT(a, b) CONCAT_INNER(a, b)
+#define CONCAT_INNER(a, b) a##b
+
+#define UNIQUE_NAME(base) CONCAT(base, __LINE__)
+
+#define FOR_ITER_CSTR(it, input, sep)                              \
+    const char *UNIQUE_NAME(end) = end(cstr(input));               \
+    for (                                                          \
+        cstr it = TAKE_TIL_SEP(sep, ptr(input), UNIQUE_NAME(end)); \
+        ptr(it) < UNIQUE_NAME(end);                                \
+        it = TAKE_TIL_SEP(sep, end(it) + 1, UNIQUE_NAME(end)))
+
+cstr take_til_sep_cstr(cstr sep, const char *begin, const char *end)
+{
+    if (begin >= end)
+        return (cstr){.length = 0, .inner = end};
+
+    cstr str_begin = (cstr){.inner = begin, .length = end - begin};
+    cstr found_sep = cstr_find_first(str_begin, sep);
+
+    return (cstr){.length = ptr(found_sep) - begin, .inner = begin};
+}
+
+cstr take_til_sep_char_ptr(const char *sep, const char *begin, const char *end)
+{
+    return take_til_sep_cstr(cstr(sep), begin, end);
+}
+
+cstr cstr_end(cstr input)
+{
+    return (cstr){.length = 0, .inner = end(input)};
+}
 
 cstr cstr_from_char_ptr(const char *input)
 {
@@ -134,7 +202,7 @@ bool cstr_contains(cstr haystack, cstr needle)
 cstr cstr_find_first(cstr haystack, cstr needle)
 {
     if (len(needle) == 0)
-        return (cstr){.length = 0, .inner = NULL};
+        return cstr_end(haystack);
 
     int left = 0, right = 0;
     int shift_table[needle.length];
@@ -154,15 +222,14 @@ cstr cstr_find_first(cstr haystack, cstr needle)
     }
 
     int needle_pos = 0;
-    const char *haystack_end = haystack.inner + haystack.length;
 
-    while (haystack.inner < haystack_end)
+    while (ptr(haystack) < end(haystack))
     {
         while (needle_pos >= 0 && needle.inner[needle_pos] != *haystack.inner)
             needle_pos = shift_table[needle_pos];
 
         needle_pos++;
-        haystack.inner++;
+        inc(haystack);
 
         if (needle_pos == len(needle))
             return (cstr){
@@ -170,5 +237,5 @@ cstr cstr_find_first(cstr haystack, cstr needle)
                 .inner = haystack.inner - len(needle)};
     }
 
-    return (cstr){.length = 0, .inner = NULL};
+    return cstr_end(haystack);
 }
