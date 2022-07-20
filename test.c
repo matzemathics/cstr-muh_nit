@@ -84,7 +84,7 @@ MUH_NIT_CASE(test_contains)
     return MUH_SUCCESS;
 }
 
-MUH_NIT_CASE(test_for_word)
+MUH_NIT_CASE(test_for_word_space)
 {
     cstr sentence = cstr("some simple sentence for testing");
     const char *ref = ptr(sentence);
@@ -110,6 +110,32 @@ MUH_NIT_CASE(test_for_word)
     return MUH_SUCCESS;
 }
 
+MUH_NIT_CASE(test_for_word_sep)
+{
+    cstr sentence = cstr("some--simple--sentence--for--testing");
+    const char *ref = ptr(sentence);
+    int i = 0;
+
+    FOR_ITER_CSTR(word, sentence, "--")
+    {
+        MUH_ASSERT("to many words", i < 6);
+
+        int j = 0;
+        while (ref + j < end(sentence) && ref[j] != '-')
+            j++;
+
+        MUH_ASSERT("wrong word length", len(word) == j);
+        MUH_ASSERT("wrong word", ptr(word) == ref);
+
+        i++;
+        ref = &ref[j + 2];
+    }
+
+    MUH_ASSERT("skipped words", i == 5);
+
+    return MUH_SUCCESS;
+}
+
 #define UNUSED(x) ((void)(x))
 
 int main(int argc, const char **args)
@@ -126,7 +152,8 @@ int main(int argc, const char **args)
         &test_cstr_match,
         &test_find_first,
         &test_contains,
-        &test_for_word);
+        &test_for_word_space,
+        &test_for_word_sep);
 
     muh_test_result res = muh_nit_run(cases);
     return muh_nit_evaluate(res);

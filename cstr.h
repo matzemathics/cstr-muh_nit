@@ -109,10 +109,11 @@ cstr take_til_sep(cstr sep, const char *begin, const char *end)
 
 #define FOR_ITER_CSTR(it, input, sep)                              \
     const char *UNIQUE_NAME(end) = end(cstr(input));               \
+    const size_t UNIQUE_NAME(sep_len) = len(cstr(sep));            \
     for (                                                          \
         cstr it = TAKE_TIL_SEP(sep, ptr(input), UNIQUE_NAME(end)); \
         ptr(it) < UNIQUE_NAME(end);                                \
-        it = TAKE_TIL_SEP(sep, end(it) + 1, UNIQUE_NAME(end)))
+        it = TAKE_TIL_SEP(sep, end(it) + UNIQUE_NAME(sep_len), UNIQUE_NAME(end)))
 
 cstr take_til_sep_cstr(cstr sep, const char *begin, const char *end)
 {
