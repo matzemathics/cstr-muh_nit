@@ -93,12 +93,12 @@ cstr take_til_sep(const char *sep, const char *begin, const char *end)
     return take_til_sep_char_ptr(sep, begin, end);
 }
 
-cstr take_tile_sep(cstr sep, const char *begin, const char *end)
+cstr take_til_sep(cstr sep, const char *begin, const char *end)
 {
     return take_til_sep_cstr(sep, begin, end);
 }
 
-#define TAKE_TIL_SEP(sep, begin, end) take_tile_sep(sep, begin, end)
+#define TAKE_TIL_SEP(sep, begin, end) take_til_sep(sep, begin, end)
 
 #endif
 
@@ -119,10 +119,13 @@ cstr take_til_sep_cstr(cstr sep, const char *begin, const char *end)
     if (begin >= end)
         return (cstr){.length = 0, .inner = end};
 
-    cstr str_begin = (cstr){.inner = begin, .length = end - begin};
+    cstr str_begin = (cstr){
+        .length = (size_t)(end - begin),
+        .inner = begin,
+    };
     cstr found_sep = cstr_find_first(str_begin, sep);
 
-    return (cstr){.length = ptr(found_sep) - begin, .inner = begin};
+    return (cstr){.length = (size_t)(ptr(found_sep) - begin), .inner = begin};
 }
 
 cstr take_til_sep_char_ptr(const char *sep, const char *begin, const char *end)
