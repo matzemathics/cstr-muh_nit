@@ -144,17 +144,17 @@ int main(int argc, const char **args)
     UNUSED(args);
 
     muh_nit_case cases[] = MUH_CASES(
-        &test_cstr_from_char_ptr,
-        &test_cstring_from_char_ptr,
-        &test_cstr_from_string,
-        &test_cstring_from_cstr,
-        &test_cstring_append,
-        &test_cstr_match,
-        &test_find_first,
-        &test_contains,
-        &test_for_word_space,
-        &test_for_word_sep);
+        test_cstr_from_char_ptr,
+        test_cstring_from_char_ptr,
+        test_cstr_from_string,
+        test_cstring_from_cstr,
+        test_cstring_append,
+        test_cstr_match,
+        test_find_first,
+        test_contains,
+        test_for_word_space,
+        test_for_word_sep);
 
-    muh_test_result res = muh_nit_run(cases);
-    return muh_nit_evaluate(res);
+    muh_nit_run(cases);
+    return muh_nit_evaluate(cases);
 }

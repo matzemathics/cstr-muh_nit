@@ -8,94 +8,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
-typedef struct muh_error
-{
-    const char *error_message;
-    int line_number;
-    const char *file_name;
-    const char *test_case;
-    struct muh_error *next;
-} muh_error;
-
-typedef struct muh_test_result
-{
-    int tests_run;
-    int failed_tests;
-    muh_error *error_list;
-} muh_test_result;
-
-typedef muh_error *(*muh_nit_case)(void);
-
-#define MUH_CASES(...)    \
-    {                     \
-        __VA_ARGS__, NULL \
-    }
-
-muh_error *muh_new_error(int line, const char *file, const char *error_message)
-{
-    muh_error *result = (muh_error *)malloc(sizeof(muh_error));
-    result->test_case = NULL;
-    result->next = NULL;
-    result->line_number = line;
-    result->file_name = file;
-    result->error_message = error_message;
-    return result;
-}
-
-void muh_append_error(muh_error **list, muh_error *next)
-{
-    while (*list != NULL)
-        list = &(*list)->next;
-
-    *list = next;
-}
-
-void muh_free_error(muh_error *error)
-{
-    while (error != NULL)
-    {
-        muh_error *temp = error->next;
-        free(error);
-        error = temp;
-    }
-}
-
-int muh_nit_evaluate(muh_test_result result)
-{
-    muh_error *temp = result.error_list;
-
-    if (temp)
-    {
-        puts("\n========================================");
-        printf("test case %s failed:\n"
-               "[%s, line %d]: %s\n",
-               temp->test_case, temp->file_name, temp->line_number, temp->error_message);
-        temp = temp->next;
-    }
-    muh_free_error(result.error_list);
-
-    printf("\nran %d tests with %d failures\n", result.tests_run, result.failed_tests);
-
-    return (result.failed_tests > 0);
-}
-
-muh_test_result muh_nit_run(muh_nit_case muh_cases[])
-{
-    muh_test_result test_result = {0, 0, NULL};
-    for (; *muh_cases != NULL; muh_cases++)
-    {
-        muh_error *res = (**muh_cases)();
-        test_result.tests_run++;
-
-        if (res)
-        {
-            test_result.failed_tests++;
-            muh_append_error(&test_result.error_list, res);
-        }
-    }
-    return test_result;
-}
+#include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
 
 typedef enum terminal_color
 {
@@ -122,9 +37,120 @@ void muh_set_terminal_color(terminal_color color)
     }
 }
 
-void muh_print_result(muh_error *res)
+typedef enum muh_error_code
 {
-    if (!res)
+    MUH_UNINITIALIZED_ERROR,
+    MUH_NO_ERROR,
+    MUH_ASSERTION_ERROR,
+    MUH_MISC_ERROR,
+} muh_error_code;
+
+#define MUH_ERROR_CODE(x) ((muh_error_code){x})
+
+typedef struct muh_error
+{
+    muh_error_code error_code;
+    int line_number;
+    const char *file_name;
+    const char *error_message;
+} muh_error;
+
+#define MUH_TEMPFILE_TEMPLATE(stream) ("muh_test_" #stream "XXXXXX")
+#define MUH_TEMPFILE_TEMPLATE_LEN 22
+
+typedef struct muh_nit_case
+{
+    const char *test_name;
+    muh_error (*run)(void);
+    muh_error error;
+    char stdout_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
+    char stderr_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
+} muh_nit_case;
+
+#define MUH_CASES(...)        \
+    {                         \
+        __VA_ARGS__, { NULL } \
+    }
+
+bool muh_contains_error(muh_error error)
+{
+    return error.error_code != MUH_NO_ERROR &&
+           error.error_code != MUH_UNINITIALIZED_ERROR;
+}
+
+void print_temp_file(const char *name, const char *message)
+{
+    FILE *stdout_tmp = fopen(name, "r");
+
+    if (stdout_tmp != NULL)
+    {
+        const int buffer_len = 1024;
+        char buffer[buffer_len];
+
+        if (fgets(buffer, buffer_len, stdout_tmp) != NULL)
+        {
+            puts(message);
+            do
+            {
+                printf("%s", buffer);
+            } while (fgets(buffer, buffer_len, stdout_tmp) != NULL);
+            puts("\n*****");
+        }
+    }
+
+    fclose(stdout_tmp);
+    remove(name);
+}
+
+void muh_print_error(muh_nit_case *test_case)
+{
+    if (!muh_contains_error(test_case->error))
+        return;
+
+    puts("\n========================================");
+    printf("test case %s failed:\n"
+           "[%s, line %d]: %s\n\n",
+           test_case->test_name,
+           test_case->error.file_name,
+           test_case->error.line_number,
+           test_case->error.error_message);
+
+    print_temp_file(test_case->stdout_temp_file, "contents of stdout:");
+    print_temp_file(test_case->stderr_temp_file, "contents of stderr:");
+}
+
+int muh_nit_evaluate(muh_nit_case cases[])
+{
+    int failed_tests = 0;
+    int skipped_tests = 0;
+    int passed_tests = 0;
+
+    for (muh_nit_case *it = cases; it->test_name != NULL; it++)
+        switch (it->error.error_code)
+        {
+        case MUH_NO_ERROR:
+            passed_tests++;
+            break;
+
+        case MUH_UNINITIALIZED_ERROR:
+            skipped_tests++;
+            break;
+
+        default:
+            muh_print_error(it);
+            failed_tests++;
+            break;
+        }
+
+    printf("\n%d passed, %d failures, %d skipped\n",
+           passed_tests, failed_tests, skipped_tests);
+
+    return (failed_tests > 0);
+}
+
+void muh_print_result(muh_error res)
+{
+    if (!muh_contains_error(res))
     {
         muh_set_terminal_color(terminal_color_green);
         puts("ok");
@@ -138,26 +164,63 @@ void muh_print_result(muh_error *res)
     }
 }
 
-#define MUH_NIT_CASE(case_ident)                 \
-    muh_error *case_ident##inner(void);          \
-    muh_error *case_ident(void)                  \
-    {                                            \
-        printf("running " #case_ident "... ");   \
-        muh_error *result = case_ident##inner(); \
-        muh_print_result(result);                \
-        if (result)                              \
-            result->test_case = #case_ident;     \
-        return result;                           \
-    }                                            \
-    muh_error *case_ident##inner(void)
+void muh_nit_run_case(muh_nit_case *test_case)
+{
+    close(mkstemp(test_case->stdout_temp_file));
+    close(mkstemp(test_case->stderr_temp_file));
+    printf("running %s... ", test_case->test_name);
 
-#define MUH_ASSERT(error_msg, assertion)                         \
-    do                                                           \
-    {                                                            \
-        if (!(assertion))                                        \
-            return muh_new_error(__LINE__, __FILE__, error_msg); \
+    freopen(test_case->stdout_temp_file, "w", stdout);
+    freopen(test_case->stderr_temp_file, "w", stderr);
+    test_case->error = test_case->run();
+    freopen("/dev/tty", "w", stdout);
+    freopen("/dev/tty", "w", stderr);
+
+    if (!muh_contains_error(test_case->error))
+    {
+        remove(test_case->stderr_temp_file);
+        remove(test_case->stdout_temp_file);
+    }
+
+    muh_print_result(test_case->error);
+}
+
+void muh_nit_run(muh_nit_case muh_cases[])
+{
+    for (muh_nit_case *it = muh_cases; it->test_name != NULL; it++)
+    {
+        muh_nit_run_case(it);
+    }
+}
+
+#define MUH_NIT_CASE(case_ident)                   \
+    muh_error case_ident##__inner_fun(void);       \
+    static muh_nit_case case_ident = {             \
+        #case_ident,                               \
+        &case_ident##__inner_fun,                  \
+        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)}, \
+        MUH_TEMPFILE_TEMPLATE(stdout),             \
+        MUH_TEMPFILE_TEMPLATE(stderr),             \
+    };                                             \
+    muh_error case_ident##__inner_fun(void)
+
+#define MUH_ASSERT(message, assertion)               \
+    do                                               \
+    {                                                \
+        if (!(assertion))                            \
+            return ((muh_error){                     \
+                MUH_ERROR_CODE(MUH_ASSERTION_ERROR), \
+                __LINE__,                            \
+                __FILE__,                            \
+                message,                             \
+            });                                      \
     } while (0)
 
-#define MUH_SUCCESS NULL
+#define MUH_SUCCESS ((muh_error){MUH_ERROR_CODE(MUH_NO_ERROR)})
 
-#define MUH_ERROR(message) muh_new_error(__LINE__, __FILE__, message)
+#define MUH_ERROR(message) ((muh_error){ \
+    MUH_ERROR_CODE(MUH_MISC_ERROR),      \
+    __LINE__,                            \
+    __FILE__,                            \
+    message,                             \
+})
