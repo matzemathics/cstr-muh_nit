@@ -136,13 +136,13 @@ MUH_NIT_CASE(test_for_word_sep)
     return MUH_SUCCESS;
 }
 
-#define UNUSED(x) ((void)(x))
+MUH_NIT_CASE(dumb_test, SKIP)
+{
+    return MUH_ERROR("this test always fails");
+}
 
 int main(int argc, const char **args)
 {
-    UNUSED(argc);
-    UNUSED(args);
-
     muh_nit_case cases[] = MUH_CASES(
         test_cstr_from_char_ptr,
         test_cstring_from_char_ptr,
@@ -153,8 +153,10 @@ int main(int argc, const char **args)
         test_find_first,
         test_contains,
         test_for_word_space,
-        test_for_word_sep);
+        test_for_word_sep,
+        dumb_test);
 
+    muh_setup(argc, args, cases);
     muh_nit_run(cases);
     return muh_nit_evaluate(cases);
 }

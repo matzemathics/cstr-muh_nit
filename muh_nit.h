@@ -15,6 +15,7 @@
 typedef enum terminal_color
 {
     terminal_color_red,
+    terminal_color_yellow,
     terminal_color_green,
     terminal_color_default
 } terminal_color;
@@ -29,6 +30,10 @@ void muh_set_terminal_color(terminal_color color)
 
     case terminal_color_green:
         printf("\033[32m");
+        break;
+
+    case terminal_color_yellow:
+        printf("\033[33m");
         break;
 
     default:
@@ -61,7 +66,12 @@ typedef struct muh_error
 typedef struct muh_nit_case
 {
     const char *test_name;
-    muh_error (*run)(void);
+    bool skip;
+#ifdef __cplusplus
+    muh_error (*run)(...);
+#else
+    muh_error (*run)();
+#endif
     muh_error error;
     char stdout_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
     char stderr_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
@@ -71,6 +81,71 @@ typedef struct muh_nit_case
     {                         \
         __VA_ARGS__, { NULL } \
     }
+
+void muh_mark_skip(muh_nit_case cases[], const char *skip_name)
+{
+    for (muh_nit_case *it = cases; it->test_name != NULL; it++)
+    {
+        if (strcmp(it->test_name, skip_name) == 0)
+        {
+            it->skip = true;
+            break;
+        }
+    }
+}
+
+void muh_mark_only(muh_nit_case cases[], const char *only_name)
+{
+    for (muh_nit_case *it = cases; it->test_name != NULL; it++)
+    {
+        if (strcmp(it->test_name, only_name) != 0)
+        {
+            it->skip = true;
+        }
+        else
+        {
+            it->skip = false;
+        }
+    }
+}
+
+void muh_setup(int argc, const char **argv, muh_nit_case cases[])
+{
+    // skip executable name
+    argc--;
+    argv++;
+
+    while (argc--)
+    {
+        if (strcmp("--skip", *argv) == 0)
+        {
+            if (argc == 0)
+            {
+                fputs("muh_nit: missing argument for --skip\n", stderr);
+                exit(1);
+            }
+            else
+            {
+                argc--;
+                muh_mark_skip(cases, *++argv);
+            }
+        }
+        else if (strcmp("--only", *argv) == 0)
+        {
+            if (argc == 0)
+            {
+                fputs("muh_nit: missing argument for --only\n", stderr);
+                exit(1);
+            }
+            else
+            {
+                muh_mark_only(cases, *++argv);
+                break;
+            }
+        }
+        argv++;
+    }
+}
 
 bool muh_contains_error(muh_error error)
 {
@@ -148,10 +223,32 @@ int muh_nit_evaluate(muh_nit_case cases[])
     return (failed_tests > 0);
 }
 
-void muh_print_result(muh_error res)
+void muh_nit_run_case(muh_nit_case *test_case)
 {
-    if (!muh_contains_error(res))
+    printf("running %s... ", test_case->test_name);
+
+    if (test_case->skip)
     {
+        muh_set_terminal_color(terminal_color_yellow);
+        puts("skipped");
+        muh_set_terminal_color(terminal_color_default);
+        return;
+    }
+
+    close(mkstemp(test_case->stdout_temp_file));
+    close(mkstemp(test_case->stderr_temp_file));
+
+    freopen(test_case->stdout_temp_file, "w", stdout);
+    freopen(test_case->stderr_temp_file, "w", stderr);
+    test_case->error = test_case->run();
+    freopen("/dev/tty", "w", stdout);
+    freopen("/dev/tty", "w", stderr);
+
+    if (!muh_contains_error(test_case->error))
+    {
+        remove(test_case->stderr_temp_file);
+        remove(test_case->stdout_temp_file);
+
         muh_set_terminal_color(terminal_color_green);
         puts("ok");
         muh_set_terminal_color(terminal_color_default);
@@ -164,27 +261,6 @@ void muh_print_result(muh_error res)
     }
 }
 
-void muh_nit_run_case(muh_nit_case *test_case)
-{
-    close(mkstemp(test_case->stdout_temp_file));
-    close(mkstemp(test_case->stderr_temp_file));
-    printf("running %s... ", test_case->test_name);
-
-    freopen(test_case->stdout_temp_file, "w", stdout);
-    freopen(test_case->stderr_temp_file, "w", stderr);
-    test_case->error = test_case->run();
-    freopen("/dev/tty", "w", stdout);
-    freopen("/dev/tty", "w", stderr);
-
-    if (!muh_contains_error(test_case->error))
-    {
-        remove(test_case->stderr_temp_file);
-        remove(test_case->stdout_temp_file);
-    }
-
-    muh_print_result(test_case->error);
-}
-
 void muh_nit_run(muh_nit_case muh_cases[])
 {
     for (muh_nit_case *it = muh_cases; it->test_name != NULL; it++)
@@ -193,16 +269,44 @@ void muh_nit_run(muh_nit_case muh_cases[])
     }
 }
 
-#define MUH_NIT_CASE(case_ident)                   \
-    muh_error case_ident##__inner_fun(void);       \
-    static muh_nit_case case_ident = {             \
-        #case_ident,                               \
-        &case_ident##__inner_fun,                  \
-        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)}, \
-        MUH_TEMPFILE_TEMPLATE(stdout),             \
-        MUH_TEMPFILE_TEMPLATE(stderr),             \
-    };                                             \
-    muh_error case_ident##__inner_fun(void)
+#define SKIP true, (NULL), true
+#define TAIL(x, ...) __VA_ARGS__
+#define FST(x, ...) x
+#define SND(x, y, ...) y
+#define THRD(x, y, z, ...) z
+#define MACRO_APP(f, args) f args
+
+#define FIXTURE(name, ...) , (name, __VA_ARGS__)
+
+#ifdef __cplusplus
+
+#define MUH_NIT_CASE(case_ident, ...)                                               \
+    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, )))); \
+    static muh_nit_case case_ident = {                                              \
+        #case_ident,                                                                \
+        THRD(__VA_ARGS__, false, false),                                            \
+        (muh_error(*)(...)) & case_ident##__inner_fun,                              \
+        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)},                                  \
+        MUH_TEMPFILE_TEMPLATE(stdout),                                              \
+        MUH_TEMPFILE_TEMPLATE(stderr),                                              \
+    };                                                                              \
+    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, ))))
+
+#else
+
+#define MUH_NIT_CASE(case_ident, ...)                                               \
+    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, )))); \
+    static muh_nit_case case_ident = {                                              \
+        #case_ident,                                                                \
+        THRD(__VA_ARGS__, false, false),                                            \
+        (muh_error(*)()) & case_ident##__inner_fun,                                 \
+        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)},                                  \
+        MUH_TEMPFILE_TEMPLATE(stdout),                                              \
+        MUH_TEMPFILE_TEMPLATE(stderr),                                              \
+    };                                                                              \
+    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, ))))
+
+#endif
 
 #define MUH_ASSERT(message, assertion)               \
     do                                               \
