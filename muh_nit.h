@@ -60,6 +60,13 @@ typedef struct muh_error
     const char *error_message;
 } muh_error;
 
+typedef struct muh_fixture_table
+{
+    void *data;
+    size_t row_width;
+    size_t data_size;
+} muh_fixture_table;
+
 #define MUH_TEMPFILE_TEMPLATE(stream) ("muh_test_" #stream "XXXXXX")
 #define MUH_TEMPFILE_TEMPLATE_LEN 22
 
@@ -67,14 +74,11 @@ typedef struct muh_nit_case
 {
     const char *test_name;
     bool skip;
-#ifdef __cplusplus
-    muh_error (*run)(...);
-#else
-    muh_error (*run)();
-#endif
+    void (*run)(muh_error *, void *);
     muh_error error;
     char stdout_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
     char stderr_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
+    muh_fixture_table *fixture_table;
 } muh_nit_case;
 
 #define MUH_CASES(...)        \
@@ -240,7 +244,32 @@ void muh_nit_run_case(muh_nit_case *test_case)
 
     freopen(test_case->stdout_temp_file, "w", stdout);
     freopen(test_case->stderr_temp_file, "w", stderr);
-    test_case->error = test_case->run();
+
+    if (test_case->fixture_table != NULL)
+    {
+        void *current = test_case->fixture_table->data;
+        void *end = (void *)((unsigned long)current + test_case->fixture_table->data_size);
+
+        while (current != end)
+        {
+            test_case->run(&test_case->error, current);
+
+            if (muh_contains_error(test_case->error))
+                break;
+
+            freopen(test_case->stdout_temp_file, "w", stdout);
+            freopen(test_case->stderr_temp_file, "w", stderr);
+
+            current = (void *)((unsigned long)current + test_case->fixture_table->row_width);
+        }
+    }
+    else
+    {
+        test_case->run(&test_case->error, NULL);
+        if (test_case->error.error_code == MUH_UNINITIALIZED_ERROR)
+            test_case->error.error_code = MUH_NO_ERROR;
+    }
+
     freopen("/dev/tty", "w", stdout);
     freopen("/dev/tty", "w", stderr);
 
@@ -269,62 +298,155 @@ void muh_nit_run(muh_nit_case muh_cases[])
     }
 }
 
-#define SKIP true, (NULL), true
-#define TAIL(x, ...) __VA_ARGS__
 #define FST(x, ...) x
 #define SND(x, y, ...) y
-#define THRD(x, y, z, ...) z
 #define MACRO_APP(f, args) f args
 
-#define FIXTURE(name, ...) , (name, __VA_ARGS__)
+#define FIXTURE_PARAMETER __fixture_data
+#define ERROR_PARAMETER __muh_error_res
 
-#ifdef __cplusplus
-
-#define MUH_NIT_CASE(case_ident, ...)                                               \
-    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, )))); \
-    static muh_nit_case case_ident = {                                              \
-        #case_ident,                                                                \
-        THRD(__VA_ARGS__, false, false),                                            \
-        (muh_error(*)(...)) & case_ident##__inner_fun,                              \
-        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)},                                  \
-        MUH_TEMPFILE_TEMPLATE(stdout),                                              \
-        MUH_TEMPFILE_TEMPLATE(stderr),                                              \
-    };                                                                              \
-    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, ))))
-
-#else
-
-#define MUH_NIT_CASE(case_ident, ...)                                               \
-    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, )))); \
-    static muh_nit_case case_ident = {                                              \
-        #case_ident,                                                                \
-        THRD(__VA_ARGS__, false, false),                                            \
-        (muh_error(*)()) & case_ident##__inner_fun,                                 \
-        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)},                                  \
-        MUH_TEMPFILE_TEMPLATE(stdout),                                              \
-        MUH_TEMPFILE_TEMPLATE(stderr),                                              \
-    };                                                                              \
-    muh_error case_ident##__inner_fun(MACRO_APP(TAIL, SND(__VA_ARGS__, (NULL, ))))
-
-#endif
+#define MUH_NIT_CASE(case_ident, ...)                  \
+    void case_ident##__inner_fun(muh_error *, void *); \
+    static muh_nit_case case_ident = {                 \
+        #case_ident,                                   \
+        EVAL(FIND_SKIP(__VA_ARGS__)),                  \
+        &case_ident##__inner_fun,                      \
+        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)},     \
+        MUH_TEMPFILE_TEMPLATE(stdout),                 \
+        MUH_TEMPFILE_TEMPLATE(stderr),                 \
+        EVAL(FIND_FIXTURE(__VA_ARGS__)),               \
+    };                                                 \
+    void case_ident##__inner_fun(muh_error *ERROR_PARAMETER, void *FIXTURE_PARAMETER)
 
 #define MUH_ASSERT(message, assertion)               \
     do                                               \
     {                                                \
         if (!(assertion))                            \
-            return ((muh_error){                     \
+        {                                            \
+            *ERROR_PARAMETER = ((muh_error){         \
                 MUH_ERROR_CODE(MUH_ASSERTION_ERROR), \
                 __LINE__,                            \
                 __FILE__,                            \
                 message,                             \
             });                                      \
+            return;                                  \
+        }                                            \
     } while (0)
 
-#define MUH_SUCCESS ((muh_error){MUH_ERROR_CODE(MUH_NO_ERROR)})
+#define MUH_FAIL(message)                   \
+    do                                      \
+    {                                       \
+        *ERROR_PARAMETER = ((muh_error){    \
+            MUH_ERROR_CODE(MUH_MISC_ERROR), \
+            __LINE__,                       \
+            __FILE__,                       \
+            message,                        \
+        });                                 \
+        return;                             \
+    } while (0)
 
-#define MUH_ERROR(message) ((muh_error){ \
-    MUH_ERROR_CODE(MUH_MISC_ERROR),      \
-    __LINE__,                            \
-    __FILE__,                            \
-    message,                             \
-})
+#define EVAL(...) EVAL1(EVAL1(EVAL1(__VA_ARGS__)))
+#define EVAL1(...) EVAL2(EVAL2(EVAL2(__VA_ARGS__)))
+#define EVAL2(...) EVAL3(EVAL3(EVAL3(__VA_ARGS__)))
+#define EVAL3(...) EVAL4(EVAL4(EVAL4(__VA_ARGS__)))
+#define EVAL4(...) EVAL5(EVAL5(EVAL5(__VA_ARGS__)))
+#define EVAL5(...) __VA_ARGS__
+
+#define EMPTY(...)
+#define DEFER(...) __VA_ARGS__ EMPTY()
+#define OBSTRUCT(...) __VA_ARGS__ DEFER(EMPTY)()
+#define EXPAND(...) __VA_ARGS__
+
+#define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
+#define PRIMITIVE_CAT(a, ...) a##__VA_ARGS__
+
+#define INDIRECT_SND(...) SND(__VA_ARGS__)
+#define IS_NON_EMPTY(x, ...) EXPAND(INDIRECT_SND(PRIMITIVE_CAT(IS_NON_EMPTY_, x), 1))
+#define IS_NON_EMPTY_ ~, 0
+
+#define WHEN(c) CAT(WHEN_, c)
+#define WHEN_0 EMPTY
+#define WHEN_1 EXPAND
+
+#define INC(x) CAT(INC_, x)
+#define INC_0 1
+#define INC_1 2
+#define INC_2 3
+#define INC_3 4
+#define INC_4 5
+#define INC_5 6
+#define INC_6 7
+#define INC_7 8
+#define INC_8 9
+
+#define FIXTURE_FIELD(counter) CAT(__fixture_field_, counter)
+#define FIXTURE_FIELD_TYPE(name, counter) CAT(CAT(__, name), CAT(_field, counter))
+
+#define TABLE_FIELDS_ID() TABLE_FIELDS
+#define TABLE_FIELDS(counter, x, ...) \
+    WHEN(IS_NON_EMPTY(x))             \
+    (x FIXTURE_FIELD(counter);        \
+     OBSTRUCT(TABLE_FIELDS_ID)()(INC(counter), __VA_ARGS__))
+#define TABLE(...) (struct {TABLE_FIELDS(0, __VA_ARGS__)}, __VA_ARGS__)
+
+#define TABLE_TYPES_ID() TABLE_TYPES
+#define TABLE_TYPES_IND(...) TABLE_TYPES(__VA_ARGS__)
+#define TABLE_TYPES(name, counter, x, ...)        \
+    WHEN(IS_NON_EMPTY(x))                         \
+    (typedef x FIXTURE_FIELD_TYPE(name, counter); \
+     OBSTRUCT(TABLE_TYPES_ID)()(name, INC(counter), __VA_ARGS__))
+
+#define OR(x) CAT(OR_, x)
+#define OR_0(y) y
+#define OR_1(_) 1
+
+#define NOT(x) CAT(NOT_, x)
+#define NOT_1 0
+#define NOT_0 1
+
+#define IS_EMPTY(x) NOT(IS_NON_EMPTY(x))
+
+#define IIF(x) CAT(IIF_, x)
+#define IIF_0(_, x) x
+#define IIF_1(x, _) x
+
+#define FIND_SKIP_ID() FIND_SKIP
+#define FIND_SKIP(x, ...)            \
+    IIF(OR(IS_SKIP(x))(IS_EMPTY(x))) \
+    (IS_SKIP(x), OBSTRUCT(FIND_SKIP_ID)()(__VA_ARGS__))
+#define IS_SKIP(x) INDIRECT_SND(CAT(IS_SKIP_, x), 0)
+#define IS_SKIP_SKIP ~, 1
+
+#define FIND_FIXTURE_ID() FIND_FIXTURE
+#define FIND_FIXTURE(x, ...)            \
+    IIF(OR(IS_EMPTY(x))(IS_FIXTURE(x))) \
+    (FIXTURE_PARAM(x), OBSTRUCT(FIND_FIXTURE_ID)()(__VA_ARGS__))
+#define IS_FIXTURE(x) INDIRECT_SND(CAT(IS_FIXTURE_, x), 0)
+#define IS_FIXTURE_FIXTURE(...) ~, 1
+#define FIXTURE_PARAM(x) INDIRECT_SND(CAT(FIXTURE_PARAM_, x), NULL)
+#define FIXTURE_PARAM_FIXTURE(p) ~, &p
+
+#define STR(x) STR_INNER(x)
+#define STR_INNER(x, ...) #x
+#define TAIL(x, ...) __VA_ARGS__
+
+#define MUH_NIT_FIXTURE(name, layout, ...)                        \
+    typedef EVAL(MACRO_APP(FST, layout)) name##__fixture_struct;  \
+    EVAL(TABLE_TYPES_IND(name, 0, MACRO_APP(TAIL, layout)));      \
+    static name##__fixture_struct name##__data[] = {__VA_ARGS__}; \
+    static muh_fixture_table name = {                             \
+        name##__data,                                             \
+        sizeof(name##__fixture_struct),                           \
+        sizeof(name##__data),                                     \
+    };
+
+#define FIXTURE_INIT_ID() FIXTURE_INIT
+#define FIXTURE_INIT(name, counter, arg, ...)                                          \
+    WHEN(IS_NON_EMPTY(arg))                                                            \
+    (FIXTURE_FIELD_TYPE(name, counter) arg = __muh_fixture_tmp.FIXTURE_FIELD(counter); \
+     OBSTRUCT(FIXTURE_INIT_ID)()(name, INC(counter), __VA_ARGS__))
+
+#define MUH_FIXTURE_BIND(name, ...)                                                          \
+    name##__fixture_struct __muh_fixture_tmp = *(name##__fixture_struct *)FIXTURE_PARAMETER; \
+    EVAL(FIXTURE_INIT(name, 0, __VA_ARGS__))                                                 \
+    while (false)

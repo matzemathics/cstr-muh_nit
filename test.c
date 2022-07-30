@@ -16,7 +16,6 @@ MUH_NIT_CASE(test_cstr_from_char_ptr)
     cstr s = cstr("test");
     MUH_ASSERT("wrong length in cstr conversion", len(s) == 4);
     MUH_ASSERT("cstr conversion failed", strncmp(s.inner, "test", len(s)) == 0);
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_cstring_from_char_ptr)
@@ -25,7 +24,6 @@ MUH_NIT_CASE(test_cstring_from_char_ptr)
     MUH_ASSERT("wrong length in cstring conversion", len(s) == 4);
     MUH_ASSERT("cstr conversion failed", strncmp(s.inner, "test", len(s)) == 0);
     cstring_free(s);
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_cstr_from_string)
@@ -35,7 +33,6 @@ MUH_NIT_CASE(test_cstr_from_string)
     MUH_ASSERT("wrong length in cstr reference", len(res) == len(s));
     MUH_ASSERT("cstr reference broken", s.inner == res.inner);
     cstring_free(s);
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_cstring_from_cstr)
@@ -44,7 +41,6 @@ MUH_NIT_CASE(test_cstring_from_cstr)
     MUH_ASSERT("wrong length in cstring conversion", len(s) == 4);
     MUH_ASSERT("cstring conversion failed", strncmp(s.inner, "test", len(s)) == 0);
     cstring_free(s);
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_cstring_append)
@@ -55,7 +51,6 @@ MUH_NIT_CASE(test_cstring_append)
     MUH_ASSERT("cstring append failed", strncmp(s.inner, "hello world", len(s)) == 0);
     MUH_ASSERT("capacity invariant broken", s.capacity >= len(s));
     cstring_free(s);
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_cstr_match)
@@ -64,7 +59,6 @@ MUH_NIT_CASE(test_cstr_match)
     MUH_ASSERT("equal strings do not match", cstr_match(a, b));
     MUH_ASSERT("unequal strings match", !cstr_match(a, c));
     MUH_ASSERT("unequal strings match", !cstr_match(a, d));
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_find_first)
@@ -72,7 +66,6 @@ MUH_NIT_CASE(test_find_first)
     cstr a = cstr("tesettingsre");
     MUH_ASSERT("fake finding", len(cstr_find_first(a, cstr("test"))) == 0);
     MUH_ASSERT("find failed", cstr_match(cstr_find_first(a, cstr("setting")), cstr("setting")));
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_contains)
@@ -81,7 +74,6 @@ MUH_NIT_CASE(test_contains)
     MUH_ASSERT("contains found fake", !cstr_contains(a, cstr("test")));
     MUH_ASSERT("contains found not", cstr_contains(a, cstr("setting")));
     MUH_ASSERT("contains found not", cstr_contains(a, cstr("ser")));
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_for_word_space)
@@ -106,8 +98,6 @@ MUH_NIT_CASE(test_for_word_space)
     }
 
     MUH_ASSERT("skipped words", i == 5);
-
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(test_for_word_sep)
@@ -132,13 +122,26 @@ MUH_NIT_CASE(test_for_word_sep)
     }
 
     MUH_ASSERT("skipped words", i == 5);
-
-    return MUH_SUCCESS;
 }
 
 MUH_NIT_CASE(dumb_test, SKIP)
 {
-    return MUH_ERROR("this test always fails");
+    MUH_FAIL("this test always fails");
+}
+
+MUH_NIT_FIXTURE(test_fixture, TABLE(int, float, const char *),
+                {1, 0, "blah"},
+                {2, 5, "blub"}, )
+
+MUH_NIT_CASE(fixture_test, FIXTURE(test_fixture), SKIP)
+{
+    MUH_FIXTURE_BIND(test_fixture, a, b, res);
+    printf("%d %f %s\n", a, b, res);
+
+    if (a == 2)
+    {
+        MUH_FAIL("oh no, not the second test");
+    }
 }
 
 int main(int argc, const char **args)
@@ -154,7 +157,8 @@ int main(int argc, const char **args)
         test_contains,
         test_for_word_space,
         test_for_word_sep,
-        dumb_test);
+        dumb_test,
+        fixture_test);
 
     muh_setup(argc, args, cases);
     muh_nit_run(cases);
