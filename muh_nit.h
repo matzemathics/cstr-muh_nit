@@ -50,8 +50,6 @@ typedef enum muh_error_code
     MUH_MISC_ERROR,
 } muh_error_code;
 
-#define MUH_ERROR_CODE(x) ((muh_error_code){x})
-
 typedef struct muh_error
 {
     muh_error_code error_code;
@@ -67,8 +65,8 @@ typedef struct muh_fixture_table
     size_t data_size;
 } muh_fixture_table;
 
-#define MUH_TEMPFILE_TEMPLATE(stream) ("muh_test_" #stream "XXXXXX")
-#define MUH_TEMPFILE_TEMPLATE_LEN 22
+#define __MUH_TEMPFILE_TEMPLATE(stream) ("muh_test_" #stream "XXXXXX")
+#define __MUH_TEMPFILE_TEMPLATE_LEN 22
 
 typedef struct muh_nit_case
 {
@@ -76,8 +74,8 @@ typedef struct muh_nit_case
     bool skip;
     void (*run)(muh_error *, void *);
     muh_error error;
-    char stdout_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
-    char stderr_temp_file[MUH_TEMPFILE_TEMPLATE_LEN];
+    char stdout_temp_file[__MUH_TEMPFILE_TEMPLATE_LEN];
+    char stderr_temp_file[__MUH_TEMPFILE_TEMPLATE_LEN];
     muh_fixture_table *fixture_table;
 } muh_nit_case;
 
@@ -298,155 +296,153 @@ void muh_nit_run(muh_nit_case muh_cases[])
     }
 }
 
-#define FST(x, ...) x
-#define SND(x, y, ...) y
-#define MACRO_APP(f, args) f args
+#define __MUH_FIX_DATA_ARG __fixture_data
+#define __MUH_ERR_ARG __muh_error_res
 
-#define FIXTURE_PARAMETER __fixture_data
-#define ERROR_PARAMETER __muh_error_res
+#define MUH_NIT_CASE(case_ident, ...)                    \
+    void case_ident##__inner_fun(muh_error *, void *);   \
+    static muh_nit_case case_ident = {                   \
+        #case_ident,                                     \
+        __MUH_HLP_EVAL(__MUH_FIND_SKIP(__VA_ARGS__)),    \
+        &case_ident##__inner_fun,                        \
+        {MUH_UNINITIALIZED_ERROR},                       \
+        __MUH_TEMPFILE_TEMPLATE(stdout),                 \
+        __MUH_TEMPFILE_TEMPLATE(stderr),                 \
+        __MUH_HLP_EVAL(__MUH_FIND_FIXTURE(__VA_ARGS__)), \
+    };                                                   \
+    void case_ident##__inner_fun(muh_error *__MUH_ERR_ARG, void *__MUH_FIX_DATA_ARG)
 
-#define MUH_NIT_CASE(case_ident, ...)                  \
-    void case_ident##__inner_fun(muh_error *, void *); \
-    static muh_nit_case case_ident = {                 \
-        #case_ident,                                   \
-        EVAL(FIND_SKIP(__VA_ARGS__)),                  \
-        &case_ident##__inner_fun,                      \
-        {MUH_ERROR_CODE(MUH_UNINITIALIZED_ERROR)},     \
-        MUH_TEMPFILE_TEMPLATE(stdout),                 \
-        MUH_TEMPFILE_TEMPLATE(stderr),                 \
-        EVAL(FIND_FIXTURE(__VA_ARGS__)),               \
-    };                                                 \
-    void case_ident##__inner_fun(muh_error *ERROR_PARAMETER, void *FIXTURE_PARAMETER)
-
-#define MUH_ASSERT(message, assertion)               \
-    do                                               \
-    {                                                \
-        if (!(assertion))                            \
-        {                                            \
-            *ERROR_PARAMETER = ((muh_error){         \
-                MUH_ERROR_CODE(MUH_ASSERTION_ERROR), \
-                __LINE__,                            \
-                __FILE__,                            \
-                message,                             \
-            });                                      \
-            return;                                  \
-        }                                            \
+#define MUH_ASSERT(message, assertion)     \
+    do                                     \
+    {                                      \
+        if (!(assertion))                  \
+        {                                  \
+            *__MUH_ERR_ARG = ((muh_error){ \
+                MUH_ASSERTION_ERROR,       \
+                __LINE__,                  \
+                __FILE__,                  \
+                message,                   \
+            });                            \
+            return;                        \
+        }                                  \
     } while (0)
 
-#define MUH_FAIL(message)                   \
-    do                                      \
-    {                                       \
-        *ERROR_PARAMETER = ((muh_error){    \
-            MUH_ERROR_CODE(MUH_MISC_ERROR), \
-            __LINE__,                       \
-            __FILE__,                       \
-            message,                        \
-        });                                 \
-        return;                             \
+#define MUH_FAIL(message)              \
+    do                                 \
+    {                                  \
+        *__MUH_ERR_ARG = ((muh_error){ \
+            MUH_MISC_ERROR,            \
+            __LINE__,                  \
+            __FILE__,                  \
+            message,                   \
+        });                            \
+        return;                        \
     } while (0)
 
-#define EVAL(...) EVAL1(EVAL1(EVAL1(__VA_ARGS__)))
-#define EVAL1(...) EVAL2(EVAL2(EVAL2(__VA_ARGS__)))
-#define EVAL2(...) EVAL3(EVAL3(EVAL3(__VA_ARGS__)))
-#define EVAL3(...) EVAL4(EVAL4(EVAL4(__VA_ARGS__)))
-#define EVAL4(...) EVAL5(EVAL5(EVAL5(__VA_ARGS__)))
-#define EVAL5(...) __VA_ARGS__
+#define __MUH_HLP_EVAL(...) __MUH_HLP_EVAL1(__MUH_HLP_EVAL1(__MUH_HLP_EVAL1(__VA_ARGS__)))
+#define __MUH_HLP_EVAL1(...) __MUH_HLP_EVAL2(__MUH_HLP_EVAL2(__MUH_HLP_EVAL2(__VA_ARGS__)))
+#define __MUH_HLP_EVAL2(...) __MUH_HLP_EVAL3(__MUH_HLP_EVAL3(__MUH_HLP_EVAL3(__VA_ARGS__)))
+#define __MUH_HLP_EVAL3(...) __MUH_HLP_EVAL4(__MUH_HLP_EVAL4(__MUH_HLP_EVAL4(__VA_ARGS__)))
+#define __MUH_HLP_EVAL4(...) __MUH_HLP_EVAL5(__MUH_HLP_EVAL5(__MUH_HLP_EVAL5(__VA_ARGS__)))
+#define __MUH_HLP_EVAL5(...) __VA_ARGS__
 
-#define EMPTY(...)
-#define DEFER(...) __VA_ARGS__ EMPTY()
-#define OBSTRUCT(...) __VA_ARGS__ DEFER(EMPTY)()
-#define EXPAND(...) __VA_ARGS__
+#define __MUH_HLP_EMPTY(...)
+#define __MUH_HLP_DEFER(...) __VA_ARGS__ __MUH_HLP_EMPTY()
+#define __MUH_HLP_OBSTRUCT(...) __VA_ARGS__ __MUH_HLP_DEFER(__MUH_HLP_EMPTY)()
 
-#define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
-#define PRIMITIVE_CAT(a, ...) a##__VA_ARGS__
+#define __MUH_HLP_CAT(a, ...) __MUH_HLP_PRIM_CAT(a, __VA_ARGS__)
+#define __MUH_HLP_PRIM_CAT(a, ...) a##__VA_ARGS__
 
-#define INDIRECT_SND(...) SND(__VA_ARGS__)
-#define IS_NON_EMPTY(x, ...) EXPAND(INDIRECT_SND(PRIMITIVE_CAT(IS_NON_EMPTY_, x), 1))
-#define IS_NON_EMPTY_ ~, 0
+#define __MUH_HLP_SND(x, y, ...) y
+#define __MUH_HLP_NON_EMPTY(x, ...) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_PRIM_CAT(__MUH_HLP_NON_EMPTY_, x), 1)
+#define __MUH_HLP_NON_EMPTY_ ~, 0
 
-#define WHEN(c) CAT(WHEN_, c)
-#define WHEN_0 EMPTY
-#define WHEN_1 EXPAND
+#define __MUH_HLP_INC(x) __MUH_HLP_CAT(INC_, x)
+#define __MUH_HLP_INC_0 1
+#define __MUH_HLP_INC_1 2
+#define __MUH_HLP_INC_2 3
+#define __MUH_HLP_INC_3 4
+#define __MUH_HLP_INC_4 5
+#define __MUH_HLP_INC_5 6
+#define __MUH_HLP_INC_6 7
+#define __MUH_HLP_INC_7 8
+#define __MUH_HLP_INC_8 9
 
-#define INC(x) CAT(INC_, x)
-#define INC_0 1
-#define INC_1 2
-#define INC_2 3
-#define INC_3 4
-#define INC_4 5
-#define INC_5 6
-#define INC_6 7
-#define INC_7 8
-#define INC_8 9
+#define __MUH_HLP_OR(x) __MUH_HLP_CAT(__MUH_HLP_OR_, x)
+#define __MUH_HLP_OR_0(y) y
+#define __MUH_HLP_OR_1(_) 1
 
-#define FIXTURE_FIELD(counter) CAT(__fixture_field_, counter)
-#define FIXTURE_FIELD_TYPE(name, counter) CAT(CAT(__, name), CAT(_field, counter))
+#define __MUH_HLP_NOT(x) __MUH_HLP_CAT(__MUH_HLP_NOT_, x)
+#define __MUH_HLP_NOT_1 0
+#define __MUH_HLP_NOT_0 1
 
-#define TABLE_FIELDS_ID() TABLE_FIELDS
-#define TABLE_FIELDS(counter, x, ...) \
-    WHEN(IS_NON_EMPTY(x))             \
-    (x FIXTURE_FIELD(counter);        \
-     OBSTRUCT(TABLE_FIELDS_ID)()(INC(counter), __VA_ARGS__))
-#define TABLE(...) (struct {TABLE_FIELDS(0, __VA_ARGS__)}, __VA_ARGS__)
+#define __MUH_HLP_IF(x) __MUH_HLP_CAT(__MUH_HLP_IF_, x)
+#define __MUH_HLP_IF_0(_, x) x
+#define __MUH_HLP_IF_1(x, _) x
 
-#define TABLE_TYPES_ID() TABLE_TYPES
-#define TABLE_TYPES_IND(...) TABLE_TYPES(__VA_ARGS__)
-#define TABLE_TYPES(name, counter, x, ...)        \
-    WHEN(IS_NON_EMPTY(x))                         \
-    (typedef x FIXTURE_FIELD_TYPE(name, counter); \
-     OBSTRUCT(TABLE_TYPES_ID)()(name, INC(counter), __VA_ARGS__))
+#define __MUH_FIXTURE_FIELD(counter) __MUH_HLP_CAT(__fixture_field_, counter)
+#define __MUH_FIXTURE_FIELD_TYPE(name, counter) __MUH_HLP_CAT(__##name##_field_, counter)
 
-#define OR(x) CAT(OR_, x)
-#define OR_0(y) y
-#define OR_1(_) 1
+#define __MUH_TABLE_FIELDS_ID() __MUH_TABLE_FIELDS
+#define __MUH_TABLE_FIELDS(counter, x, ...) \
+    __MUH_HLP_IF(__MUH_HLP_NON_EMPTY(x))    \
+    (x __MUH_FIXTURE_FIELD(counter);        \
+     __MUH_HLP_OBSTRUCT(__MUH_TABLE_FIELDS_ID)()(__MUH_HLP_INC(counter), __VA_ARGS__), )
 
-#define NOT(x) CAT(NOT_, x)
-#define NOT_1 0
-#define NOT_0 1
+#define __MUH_FIX_TYPE_TABLE(...)          \
+    struct                                 \
+    {                                      \
+        __MUH_TABLE_FIELDS(0, __VA_ARGS__) \
+    }
 
-#define IS_EMPTY(x) NOT(IS_NON_EMPTY(x))
+#define __MUH_TYPES_TABLE(...) __VA_ARGS__
 
-#define IIF(x) CAT(IIF_, x)
-#define IIF_0(_, x) x
-#define IIF_1(x, _) x
+#define __MUH_TABLE_TYPES_ID() __MUH_TABLE_TYPES
+#define __MUH_TABLE_TYPES_IND(...) __MUH_TABLE_TYPES(__VA_ARGS__)
+#define __MUH_TABLE_TYPES(name, counter, x, ...)        \
+    __MUH_HLP_IF(__MUH_HLP_NON_EMPTY(x))                \
+    (typedef x __MUH_FIXTURE_FIELD_TYPE(name, counter); \
+     __MUH_HLP_OBSTRUCT(__MUH_TABLE_TYPES_ID)()(name, __MUH_HLP_INC(counter), __VA_ARGS__), )
 
-#define FIND_SKIP_ID() FIND_SKIP
-#define FIND_SKIP(x, ...)            \
-    IIF(OR(IS_SKIP(x))(IS_EMPTY(x))) \
-    (IS_SKIP(x), OBSTRUCT(FIND_SKIP_ID)()(__VA_ARGS__))
-#define IS_SKIP(x) INDIRECT_SND(CAT(IS_SKIP_, x), 0)
-#define IS_SKIP_SKIP ~, 1
+#define __MUH_FIND_SKIP_ID() __MUH_FIND_SKIP
+#define __MUH_FIND_SKIP(x, ...)                                                         \
+    __MUH_HLP_IF(__MUH_HLP_OR(__MUH_IS_SKIP(x))(__MUH_HLP_NOT(__MUH_HLP_NON_EMPTY(x)))) \
+    (__MUH_IS_SKIP(x), __MUH_HLP_OBSTRUCT(__MUH_FIND_SKIP_ID)()(__VA_ARGS__))
+#define __MUH_IS_SKIP(x) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_CAT(__MUH_IS_SKIP_, x), 0)
+#define __MUH_IS_SKIP_SKIP ~, 1
 
-#define FIND_FIXTURE_ID() FIND_FIXTURE
-#define FIND_FIXTURE(x, ...)            \
-    IIF(OR(IS_EMPTY(x))(IS_FIXTURE(x))) \
-    (FIXTURE_PARAM(x), OBSTRUCT(FIND_FIXTURE_ID)()(__VA_ARGS__))
-#define IS_FIXTURE(x) INDIRECT_SND(CAT(IS_FIXTURE_, x), 0)
-#define IS_FIXTURE_FIXTURE(...) ~, 1
-#define FIXTURE_PARAM(x) INDIRECT_SND(CAT(FIXTURE_PARAM_, x), NULL)
-#define FIXTURE_PARAM_FIXTURE(p) ~, &p
+#define __MUH_FIND_FIXTURE_ID() __MUH_FIND_FIXTURE
+#define __MUH_FIND_FIXTURE(x, ...)                                                         \
+    __MUH_HLP_IF(__MUH_HLP_OR(__MUH_HLP_NOT(__MUH_HLP_NON_EMPTY(x)))(__MUH_IS_FIXTURE(x))) \
+    (__MUH_FIXTURE_PARAM(x), __MUH_HLP_OBSTRUCT(__MUH_FIND_FIXTURE_ID)()(__VA_ARGS__))
+#define __MUH_IS_FIXTURE(x) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_CAT(__MUH_IS_FIXTURE_, x), 0)
+#define __MUH_IS_FIXTURE_FIXTURE(...) ~, 1
+#define __MUH_FIXTURE_PARAM(x) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_CAT(__MUH_FIXTURE_PARAM_, x), NULL)
+#define __MUH_FIXTURE_PARAM_FIXTURE(p) ~, &p
 
-#define STR(x) STR_INNER(x)
-#define STR_INNER(x, ...) #x
-#define TAIL(x, ...) __VA_ARGS__
+#define __DBG_STR(x) STR_INNER(x)
+#define __DBG_STR_INNER(x, ...) #x
 
-#define MUH_NIT_FIXTURE(name, layout, ...)                        \
-    typedef EVAL(MACRO_APP(FST, layout)) name##__fixture_struct;  \
-    EVAL(TABLE_TYPES_IND(name, 0, MACRO_APP(TAIL, layout)));      \
-    static name##__fixture_struct name##__data[] = {__VA_ARGS__}; \
-    static muh_fixture_table name = {                             \
-        name##__data,                                             \
-        sizeof(name##__fixture_struct),                           \
-        sizeof(name##__data),                                     \
+#define __MUH_CASE_TABLE(name, layout, ...)                                 \
+    typedef __MUH_HLP_EVAL(__MUH_FIX_TYPE_##layout) name##__fixture_struct; \
+    __MUH_HLP_EVAL(__MUH_TABLE_TYPES_IND(name, 0, __MUH_TYPES_##layout));   \
+    static name##__fixture_struct name##__data[] = {__VA_ARGS__};           \
+    static muh_fixture_table name = {                                       \
+        name##__data,                                                       \
+        sizeof(name##__fixture_struct),                                     \
+        sizeof(name##__data),                                               \
     };
 
-#define FIXTURE_INIT_ID() FIXTURE_INIT
-#define FIXTURE_INIT(name, counter, arg, ...)                                          \
-    WHEN(IS_NON_EMPTY(arg))                                                            \
-    (FIXTURE_FIELD_TYPE(name, counter) arg = __muh_fixture_tmp.FIXTURE_FIELD(counter); \
-     OBSTRUCT(FIXTURE_INIT_ID)()(name, INC(counter), __VA_ARGS__))
+#define __MUH_LAYOUT_SWITCH_TABLE(...) __MUH_CASE_TABLE
+#define MUH_NIT_FIXTURE(name, layout, ...) __MUH_LAYOUT_SWITCH_##layout(name, layout, __VA_ARGS__)
 
-#define MUH_FIXTURE_BIND(name, ...)                                                          \
-    name##__fixture_struct __muh_fixture_tmp = *(name##__fixture_struct *)FIXTURE_PARAMETER; \
-    EVAL(FIXTURE_INIT(name, 0, __VA_ARGS__))                                                 \
+#define __MUH_FIXTURE_INIT_ID() __MUH_FIXTURE_INIT
+#define __MUH_FIXTURE_INIT(name, counter, arg, ...)                                                \
+    __MUH_HLP_IF(__MUH_HLP_NON_EMPTY(arg))                                                         \
+    (__MUH_FIXTURE_FIELD_TYPE(name, counter) arg = __muh_fixture_tmp.__MUH_FIXTURE_FIELD(counter); \
+     __MUH_HLP_OBSTRUCT(__MUH_FIXTURE_INIT_ID)()(name, __MUH_HLP_INC(counter), __VA_ARGS__), )
+
+#define MUH_FIXTURE_BIND(name, ...)                                                           \
+    name##__fixture_struct __muh_fixture_tmp = *(name##__fixture_struct *)__MUH_FIX_DATA_ARG; \
+    __MUH_HLP_EVAL(__MUH_FIXTURE_INIT(name, 0, __VA_ARGS__))                                  \
     while (false)
