@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 
 typedef enum terminal_color
 {
@@ -58,12 +59,62 @@ typedef struct muh_error
     const char *error_message;
 } muh_error;
 
-typedef struct muh_fixture_table
+struct muh_nit_fixture;
+
+typedef struct muh_nit_fixture
 {
+    void *(*next)(struct muh_nit_fixture *self, void *current);
+} muh_nit_fixture;
+
+typedef struct muh_nit_table
+{
+    muh_nit_fixture base;
     void *data;
+    void *end;
     size_t row_width;
-    size_t data_size;
-} muh_fixture_table;
+} muh_nit_table;
+
+void *muh_nit_table_next(muh_nit_fixture *base, void *current)
+{
+    muh_nit_table *self = (muh_nit_table *)base;
+    assert(current < self->end);
+
+    if (current == NULL)
+        current = self->data;
+    else
+        current = (void *)((unsigned long)current + self->row_width);
+
+    if (current == self->end)
+        return NULL;
+
+    return current;
+}
+
+#define __MUH_MK_TABLE(data, width) \
+    (muh_nit_table) { {&muh_nit_table_next}, data, (void *)((unsigned long)data + sizeof(data)), width }
+
+typedef struct muh_nit_wrapper
+{
+    muh_nit_fixture base;
+    void *(*setup)(void);
+    void (*teardown)(void *);
+} muh_nit_wrapper;
+
+void *muh_nit_wrapper_next(muh_nit_fixture *base, void *current)
+{
+    muh_nit_wrapper *self = (muh_nit_wrapper *)base;
+
+    if (current == NULL)
+        return self->setup();
+
+    if (self->teardown != NULL)
+        self->teardown(current);
+
+    return NULL;
+}
+
+#define __MUH_MK_WRAPPER_FIXTURE(setup, teardown) \
+    (muh_nit_wrapper) { {&muh_nit_wrapper_next}, (void *(*)(void))setup, (void (*)(void *))teardown }
 
 #define __MUH_TEMPFILE_TEMPLATE(stream) ("muh_test_" #stream "XXXXXX")
 #define __MUH_TEMPFILE_TEMPLATE_LEN 22
@@ -76,7 +127,7 @@ typedef struct muh_nit_case
     muh_error error;
     char stdout_temp_file[__MUH_TEMPFILE_TEMPLATE_LEN];
     char stderr_temp_file[__MUH_TEMPFILE_TEMPLATE_LEN];
-    muh_fixture_table *fixture_table;
+    muh_nit_fixture *fixture;
 } muh_nit_case;
 
 #define MUH_CASES(...)        \
@@ -243,30 +294,31 @@ void muh_nit_run_case(muh_nit_case *test_case)
     freopen(test_case->stdout_temp_file, "w", stdout);
     freopen(test_case->stderr_temp_file, "w", stderr);
 
-    if (test_case->fixture_table != NULL)
+    if (test_case->fixture != NULL)
     {
-        void *current = test_case->fixture_table->data;
-        void *end = (void *)((unsigned long)current + test_case->fixture_table->data_size);
+        void *current = test_case->fixture->next(test_case->fixture, NULL);
 
-        while (current != end)
+        while (current)
         {
             test_case->run(&test_case->error, current);
+            current = test_case->fixture->next(test_case->fixture, current);
 
             if (muh_contains_error(test_case->error))
                 break;
 
             freopen(test_case->stdout_temp_file, "w", stdout);
             freopen(test_case->stderr_temp_file, "w", stderr);
-
-            current = (void *)((unsigned long)current + test_case->fixture_table->row_width);
         }
+
+        while (current)
+            // make sure to pull the fixture til the end
+            current = test_case->fixture->next(test_case->fixture, current);
     }
     else
-    {
         test_case->run(&test_case->error, NULL);
-        if (test_case->error.error_code == MUH_UNINITIALIZED_ERROR)
-            test_case->error.error_code = MUH_NO_ERROR;
-    }
+
+    if (test_case->error.error_code == MUH_UNINITIALIZED_ERROR)
+        test_case->error.error_code = MUH_NO_ERROR;
 
     freopen("/dev/tty", "w", stdout);
     freopen("/dev/tty", "w", stderr);
@@ -357,7 +409,7 @@ void muh_nit_run(muh_nit_case muh_cases[])
 #define __MUH_HLP_NON_EMPTY(x, ...) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_PRIM_CAT(__MUH_HLP_NON_EMPTY_, x), 1)
 #define __MUH_HLP_NON_EMPTY_ ~, 0
 
-#define __MUH_HLP_INC(x) __MUH_HLP_CAT(INC_, x)
+#define __MUH_HLP_INC(x) __MUH_HLP_CAT(__MUH_HLP_INC_, x)
 #define __MUH_HLP_INC_0 1
 #define __MUH_HLP_INC_1 2
 #define __MUH_HLP_INC_2 3
@@ -418,23 +470,30 @@ void muh_nit_run(muh_nit_case muh_cases[])
 #define __MUH_IS_FIXTURE(x) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_CAT(__MUH_IS_FIXTURE_, x), 0)
 #define __MUH_IS_FIXTURE_FIXTURE(...) ~, 1
 #define __MUH_FIXTURE_PARAM(x) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_CAT(__MUH_FIXTURE_PARAM_, x), NULL)
-#define __MUH_FIXTURE_PARAM_FIXTURE(p) ~, &p
+#define __MUH_FIXTURE_PARAM_FIXTURE(p) ~, (muh_nit_fixture *)&p
 
-#define __DBG_STR(x) STR_INNER(x)
+#define __DBG_STR(x) __DBG_STR_INNER(x)
 #define __DBG_STR_INNER(x, ...) #x
 
 #define __MUH_CASE_TABLE(name, layout, ...)                                 \
     typedef __MUH_HLP_EVAL(__MUH_FIX_TYPE_##layout) name##__fixture_struct; \
     __MUH_HLP_EVAL(__MUH_TABLE_TYPES_IND(name, 0, __MUH_TYPES_##layout));   \
     static name##__fixture_struct name##__data[] = {__VA_ARGS__};           \
-    static muh_fixture_table name = {                                       \
-        name##__data,                                                       \
-        sizeof(name##__fixture_struct),                                     \
-        sizeof(name##__data),                                               \
-    };
+    static muh_nit_table name = __MUH_MK_TABLE(name##__data, sizeof(name##__fixture_struct));
+
+#define __MUH_TYPE_WRAPPER(type, ...) type
+#define __MUH_SETUP_WRAPPER(type, setup, ...) &setup
+#define __MUH_TEARDOWN_WRAPPER(...) __MUH_TEARDOWN_WRAPPER_INNER(__VA_ARGS__, )
+#define __MUH_TEARDOWN_WRAPPER_INNER(type, setup, teardown, ...) \
+    __MUH_HLP_IF(__MUH_HLP_NON_EMPTY(teardown))                  \
+    (&teardown, NULL)
+#define __MUH_WRAPPER_FIXTURE(name, args, ...)      \
+    typedef __MUH_TYPE_##args name##__fixture_type; \
+    static muh_nit_wrapper name = __MUH_MK_WRAPPER_FIXTURE(__MUH_SETUP_##args, __MUH_TEARDOWN_##args)
 
 #define __MUH_LAYOUT_SWITCH_TABLE(...) __MUH_CASE_TABLE
-#define MUH_NIT_FIXTURE(name, layout, ...) __MUH_LAYOUT_SWITCH_##layout(name, layout, __VA_ARGS__)
+#define __MUH_LAYOUT_SWITCH_WRAPPER(...) __MUH_WRAPPER_FIXTURE
+#define MUH_NIT_FIXTURE(name, layout, ...) __MUH_LAYOUT_SWITCH_##layout(name, layout, __VA_ARGS__);
 
 #define __MUH_FIXTURE_INIT_ID() __MUH_FIXTURE_INIT
 #define __MUH_FIXTURE_INIT(name, counter, arg, ...)                                                \
@@ -442,7 +501,16 @@ void muh_nit_run(muh_nit_case muh_cases[])
     (__MUH_FIXTURE_FIELD_TYPE(name, counter) arg = __muh_fixture_tmp.__MUH_FIXTURE_FIELD(counter); \
      __MUH_HLP_OBSTRUCT(__MUH_FIXTURE_INIT_ID)()(name, __MUH_HLP_INC(counter), __VA_ARGS__), )
 
-#define MUH_FIXTURE_BIND(name, ...)                                                           \
+#define __MUH_BIND_IS_ROW(arg) __MUH_HLP_DEFER(__MUH_HLP_SND)(__MUH_HLP_CAT(__MUH_FIXTURE_ROW_BIND_, arg), 0)
+#define MUH_FIXTURE_BIND(name, arg)                     \
+    __MUH_HLP_IF(__MUH_BIND_IS_ROW(arg))                \
+    (__MUH_HLP_EVAL(__MUH_FIXTURE_BIND_ROW(name, arg)), \
+     name##__fixture_type arg = (name##__fixture_type)__MUH_FIX_DATA_ARG;)
+
+#define __MUH_ARGS_ROW(...) __VA_ARGS__
+#define __MUH_FIXTURE_BIND_ROW(name, arg)                                                     \
     name##__fixture_struct __muh_fixture_tmp = *(name##__fixture_struct *)__MUH_FIX_DATA_ARG; \
-    __MUH_HLP_EVAL(__MUH_FIXTURE_INIT(name, 0, __VA_ARGS__))                                  \
-    while (false)
+    __MUH_HLP_EVAL(__MUH_HLP_DEFER(__MUH_FIXTURE_INIT)(name, 0, __MUH_ARGS_##arg))            \
+    if (true)
+
+#define __MUH_FIXTURE_ROW_BIND_ROW(...) ~, 1

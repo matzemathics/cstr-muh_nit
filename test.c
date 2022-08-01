@@ -133,15 +133,47 @@ MUH_NIT_FIXTURE(test_fixture, TABLE(int, float, const char *),
                 {1, 0, "blah"},
                 {2, 5, "blub"}, )
 
-MUH_NIT_CASE(fixture_test, FIXTURE(test_fixture), SKIP)
+MUH_NIT_CASE(fixture_test, FIXTURE(test_fixture))
 {
-    MUH_FIXTURE_BIND(test_fixture, a, b, res);
-    printf("%d %f %s\n", a, b, res);
+    static int i;
+    printf("%d: ", i);
+    MUH_FIXTURE_BIND(test_fixture, ROW(a, b, msg));
+    printf("%d %f %s\n", a, b, msg);
+    i++;
 
+    if (a == 1)
+    {
+        MUH_ASSERT("b is wrong", b == 0);
+        MUH_ASSERT("msg is wrong", strncmp("blah", msg, 4) == 0);
+        return;
+    }
     if (a == 2)
     {
-        MUH_FAIL("oh no, not the second test");
+        MUH_ASSERT("b is wrong", b == 5);
+        MUH_ASSERT("msg is wrong", strncmp("blub", msg, 4) == 0);
+        puts("2 alright");
+        return;
     }
+
+    MUH_FAIL("unreachable");
+}
+
+const char *setup_test(void)
+{
+    return "Hello World";
+}
+
+void teardown_test(const char *input)
+{
+    assert(strcmp("Hello World", input) == 0);
+}
+
+MUH_NIT_FIXTURE(wrap_fixture, WRAPPER(const char *, setup_test, teardown_test))
+
+MUH_NIT_CASE(wrapper_test, FIXTURE(wrap_fixture))
+{
+    MUH_FIXTURE_BIND(wrap_fixture, message);
+    MUH_ASSERT("doesn't work", strcmp("Hello World", message) == 0);
 }
 
 int main(int argc, const char **args)
@@ -158,7 +190,8 @@ int main(int argc, const char **args)
         test_for_word_space,
         test_for_word_sep,
         dumb_test,
-        fixture_test);
+        fixture_test,
+        wrapper_test);
 
     muh_setup(argc, args, cases);
     muh_nit_run(cases);
