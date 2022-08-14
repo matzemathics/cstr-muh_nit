@@ -59,11 +59,33 @@ typedef struct muh_error
     const char *error_message;
 } muh_error;
 
+bool muh_contains_error(muh_error error)
+{
+    return error.error_code != MUH_NO_ERROR &&
+           error.error_code != MUH_UNINITIALIZED_ERROR;
+}
+
 struct muh_nit_fixture;
+
+typedef struct muh_nit_case
+{
+    const char *test_name;
+    bool skip;
+    void (*run)(muh_error *, void *);
+    muh_error error;
+    int fd_stdout;
+    int fd_stderr;
+    struct muh_nit_fixture *fixture;
+} muh_nit_case;
+
+#define MUH_CASES(...)        \
+    {                         \
+        __VA_ARGS__, { NULL } \
+    }
 
 typedef struct muh_nit_fixture
 {
-    void *(*next)(struct muh_nit_fixture *self, void *current);
+    void (*run_test_case)(muh_nit_case *);
 } muh_nit_fixture;
 
 typedef struct muh_nit_table
@@ -74,24 +96,24 @@ typedef struct muh_nit_table
     size_t row_width;
 } muh_nit_table;
 
-void *muh_nit_table_next(muh_nit_fixture *base, void *current)
+void muh_nit_table_run_test_case(muh_nit_case *test_case)
 {
-    muh_nit_table *self = (muh_nit_table *)base;
-    assert(current < self->end);
+    muh_nit_table *self = (muh_nit_table *)test_case->fixture;
+    void *current = self->data;
 
-    if (current == NULL)
-        current = self->data;
-    else
+    while (current < self->end)
+    {
+        test_case->run(&test_case->error, current);
+        if (muh_contains_error(test_case->error))
+            break;
+
         current = (void *)((unsigned long)current + self->row_width);
-
-    if (current == self->end)
-        return NULL;
-
-    return current;
+        // TODO: reopen stream?
+    }
 }
 
 #define __MUH_MK_TABLE(data, width) \
-    (muh_nit_table) { {&muh_nit_table_next}, data, (void *)((unsigned long)data + sizeof(data)), width }
+    (muh_nit_table) { {&muh_nit_table_run_test_case}, data, (void *)((unsigned long)data + sizeof(data)), width }
 
 typedef struct muh_nit_wrapper
 {
@@ -100,40 +122,16 @@ typedef struct muh_nit_wrapper
     void (*teardown)(void *);
 } muh_nit_wrapper;
 
-void *muh_nit_wrapper_next(muh_nit_fixture *base, void *current)
+void muh_nit_wrapper_run_test_case(muh_nit_case *test_case)
 {
-    muh_nit_wrapper *self = (muh_nit_wrapper *)base;
-
-    if (current == NULL)
-        return self->setup();
-
-    if (self->teardown != NULL)
-        self->teardown(current);
-
-    return NULL;
+    muh_nit_wrapper *self = (muh_nit_wrapper *)test_case->fixture;
+    void *data = self->setup();
+    test_case->run(&test_case->error, data);
+    self->teardown(data);
 }
 
 #define __MUH_MK_WRAPPER_FIXTURE(setup, teardown) \
-    (muh_nit_wrapper) { {&muh_nit_wrapper_next}, (void *(*)(void))setup, (void (*)(void *))teardown }
-
-#define __MUH_TEMPFILE_TEMPLATE(stream) ("muh_test_" #stream "XXXXXX")
-#define __MUH_TEMPFILE_TEMPLATE_LEN 22
-
-typedef struct muh_nit_case
-{
-    const char *test_name;
-    bool skip;
-    void (*run)(muh_error *, void *);
-    muh_error error;
-    char stdout_temp_file[__MUH_TEMPFILE_TEMPLATE_LEN];
-    char stderr_temp_file[__MUH_TEMPFILE_TEMPLATE_LEN];
-    muh_nit_fixture *fixture;
-} muh_nit_case;
-
-#define MUH_CASES(...)        \
-    {                         \
-        __VA_ARGS__, { NULL } \
-    }
+    (muh_nit_wrapper) { {&muh_nit_wrapper_run_test_case}, (void *(*)(void))setup, (void (*)(void *))teardown }
 
 void muh_mark_skip(muh_nit_case cases[], const char *skip_name)
 {
@@ -200,34 +198,26 @@ void muh_setup(int argc, const char **argv, muh_nit_case cases[])
     }
 }
 
-bool muh_contains_error(muh_error error)
+void print_temp_file(int fd, const char *message)
 {
-    return error.error_code != MUH_NO_ERROR &&
-           error.error_code != MUH_UNINITIALIZED_ERROR;
-}
+    const int buffer_len = 1024;
+    char buffer[buffer_len];
+    size_t read_len = 0;
 
-void print_temp_file(const char *name, const char *message)
-{
-    FILE *stdout_tmp = fopen(name, "r");
+    lseek(fd, 0, SEEK_SET);
 
-    if (stdout_tmp != NULL)
+    if ((read_len = read(fd, buffer, buffer_len - 1)) != 0)
     {
-        const int buffer_len = 1024;
-        char buffer[buffer_len];
-
-        if (fgets(buffer, buffer_len, stdout_tmp) != NULL)
+        buffer[read_len] = 0;
+        puts(message);
+        do
         {
-            puts(message);
-            do
-            {
-                printf("%s", buffer);
-            } while (fgets(buffer, buffer_len, stdout_tmp) != NULL);
-            puts("\n*****");
-        }
+            printf("%s", buffer);
+        } while (read(fd, buffer, buffer_len) != 0);
+        puts("\n*****");
     }
 
-    fclose(stdout_tmp);
-    remove(name);
+    close(fd);
 }
 
 void muh_print_error(muh_nit_case *test_case)
@@ -243,11 +233,11 @@ void muh_print_error(muh_nit_case *test_case)
            test_case->error.line_number,
            test_case->error.error_message);
 
-    print_temp_file(test_case->stdout_temp_file, "contents of stdout:");
-    print_temp_file(test_case->stderr_temp_file, "contents of stderr:");
+    print_temp_file(test_case->fd_stdout, "contents of stdout:");
+    print_temp_file(test_case->fd_stderr, "contents of stderr:");
 }
 
-int muh_nit_evaluate(muh_nit_case cases[])
+bool muh_nit_evaluate(muh_nit_case cases[])
 {
     int failed_tests = 0;
     int skipped_tests = 0;
@@ -276,9 +266,21 @@ int muh_nit_evaluate(muh_nit_case cases[])
     return (failed_tests > 0);
 }
 
+int redirect_stream(FILE *stream)
+{
+    int stream_fd = fileno(stream);
+    char template[] = "muh_test_%04d_XXXXXX";
+    sprintf(template, template, stream_fd);
+    int fd = mkstemp(template);
+    dup2(fd, stream_fd);
+    unlink(template);
+    return fd;
+}
+
 void muh_nit_run_case(muh_nit_case *test_case)
 {
     printf("running %s... ", test_case->test_name);
+    fflush(stdout);
 
     if (test_case->skip)
     {
@@ -288,32 +290,11 @@ void muh_nit_run_case(muh_nit_case *test_case)
         return;
     }
 
-    close(mkstemp(test_case->stdout_temp_file));
-    close(mkstemp(test_case->stderr_temp_file));
-
-    freopen(test_case->stdout_temp_file, "w", stdout);
-    freopen(test_case->stderr_temp_file, "w", stderr);
+    test_case->fd_stdout = redirect_stream(stdout);
+    test_case->fd_stderr = redirect_stream(stderr);
 
     if (test_case->fixture != NULL)
-    {
-        void *current = test_case->fixture->next(test_case->fixture, NULL);
-
-        while (current)
-        {
-            test_case->run(&test_case->error, current);
-            current = test_case->fixture->next(test_case->fixture, current);
-
-            if (muh_contains_error(test_case->error))
-                break;
-
-            freopen(test_case->stdout_temp_file, "w", stdout);
-            freopen(test_case->stderr_temp_file, "w", stderr);
-        }
-
-        while (current)
-            // make sure to pull the fixture til the end
-            current = test_case->fixture->next(test_case->fixture, current);
-    }
+        test_case->fixture->run_test_case(test_case);
     else
         test_case->run(&test_case->error, NULL);
 
@@ -325,8 +306,8 @@ void muh_nit_run_case(muh_nit_case *test_case)
 
     if (!muh_contains_error(test_case->error))
     {
-        remove(test_case->stderr_temp_file);
-        remove(test_case->stdout_temp_file);
+        close(test_case->fd_stdout);
+        close(test_case->fd_stderr);
 
         muh_set_terminal_color(terminal_color_green);
         puts("ok");
@@ -358,8 +339,8 @@ void muh_nit_run(muh_nit_case muh_cases[])
         __MUH_HLP_EVAL(__MUH_FIND_SKIP(__VA_ARGS__)),    \
         &case_ident##__inner_fun,                        \
         {MUH_UNINITIALIZED_ERROR},                       \
-        __MUH_TEMPFILE_TEMPLATE(stdout),                 \
-        __MUH_TEMPFILE_TEMPLATE(stderr),                 \
+        -1, /* stdout file descriptor */                 \
+        -1, /* stderr file descriptor */                 \
         __MUH_HLP_EVAL(__MUH_FIND_FIXTURE(__VA_ARGS__)), \
     };                                                   \
     void case_ident##__inner_fun(muh_error *__MUH_ERR_ARG, void *__MUH_FIX_DATA_ARG)

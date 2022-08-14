@@ -141,6 +141,8 @@ MUH_NIT_CASE(fixture_test, FIXTURE(test_fixture))
     printf("%d %f %s\n", a, b, msg);
     i++;
 
+    fprintf(stderr, "test\n");
+
     if (a == 1)
     {
         MUH_ASSERT("b is wrong", b == 0);
