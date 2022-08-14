@@ -269,11 +269,11 @@ bool muh_nit_evaluate(muh_nit_case cases[])
 int redirect_stream(FILE *stream)
 {
     int stream_fd = fileno(stream);
-    char template[] = "muh_test_%04d_XXXXXX";
-    sprintf(template, template, stream_fd);
-    int fd = mkstemp(template);
+    char name_template[] = "muh_test_%04d_XXXXXX";
+    sprintf(name_template, name_template, stream_fd);
+    int fd = mkstemp(name_template);
     dup2(fd, stream_fd);
-    unlink(template);
+    unlink(name_template);
     return fd;
 }
 
