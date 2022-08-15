@@ -178,6 +178,24 @@ MUH_NIT_CASE(wrapper_test, FIXTURE(wrap_fixture))
     MUH_ASSERT("doesn't work", strcmp("Hello World", message) == 0);
 }
 
+struct example
+{
+    int a;
+};
+
+void example_init(struct example *data)
+{
+    data->a = 42;
+}
+
+MUH_NIT_FIXTURE(init_fixture, INIT(struct example, example_init));
+
+MUH_NIT_CASE(init_fixture_test, FIXTURE(init_fixture))
+{
+    MUH_FIXTURE_BIND(init_fixture, data);
+    MUH_ASSERT("we got the wrong result", data->a == 42);
+}
+
 int main(int argc, const char **args)
 {
     muh_nit_case cases[] = MUH_CASES(
@@ -193,7 +211,8 @@ int main(int argc, const char **args)
         test_for_word_sep,
         dumb_test,
         fixture_test,
-        wrapper_test);
+        wrapper_test,
+        init_fixture_test);
 
     muh_setup(argc, args, cases);
     muh_nit_run(cases);

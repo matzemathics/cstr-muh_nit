@@ -133,6 +133,24 @@ void muh_nit_wrapper_run_test_case(muh_nit_case *test_case)
 #define __MUH_MK_WRAPPER_FIXTURE(setup, teardown) \
     (muh_nit_wrapper) { {&muh_nit_wrapper_run_test_case}, (void *(*)(void))setup, (void (*)(void *))teardown }
 
+typedef struct muh_nit_initializer
+{
+    muh_nit_fixture base;
+    size_t data_size;
+    void (*init)(void *memory);
+} muh_nit_initializer;
+
+void muh_nit_initializer_run_test_case(muh_nit_case *test_case)
+{
+    muh_nit_initializer *self = (muh_nit_initializer *)test_case->fixture;
+    void *data = alloca(self->data_size);
+    self->init(data);
+    test_case->run(&test_case->error, data);
+}
+
+#define __MUH_MK_INITIALIZER_FIXTURE(type, init) \
+    (muh_nit_initializer) { {&muh_nit_initializer_run_test_case}, sizeof(type), (void (*)(void *))init }
+
 void muh_mark_skip(muh_nit_case cases[], const char *skip_name)
 {
     for (muh_nit_case *it = cases; it->test_name != NULL; it++)
@@ -472,8 +490,15 @@ void muh_nit_run(muh_nit_case muh_cases[])
     typedef __MUH_TYPE_##args name##__fixture_type; \
     static muh_nit_wrapper name = __MUH_MK_WRAPPER_FIXTURE(__MUH_SETUP_##args, __MUH_TEARDOWN_##args)
 
+#define __MUH_TYPE_INIT(type, ...) type
+#define __MUH_INIT_INIT(type, init, ...) &init
+#define __MUH_INIT_FIXTURE(name, args, ...)          \
+    typedef __MUH_TYPE_##args *name##__fixture_type; \
+    static muh_nit_initializer name = __MUH_MK_INITIALIZER_FIXTURE(__MUH_TYPE_##args, __MUH_INIT_##args)
+
 #define __MUH_LAYOUT_SWITCH_TABLE(...) __MUH_CASE_TABLE
 #define __MUH_LAYOUT_SWITCH_WRAPPER(...) __MUH_WRAPPER_FIXTURE
+#define __MUH_LAYOUT_SWITCH_INIT(...) __MUH_INIT_FIXTURE
 #define MUH_NIT_FIXTURE(name, layout, ...) __MUH_LAYOUT_SWITCH_##layout(name, layout, __VA_ARGS__);
 
 #define __MUH_FIXTURE_INIT_ID() __MUH_FIXTURE_INIT
